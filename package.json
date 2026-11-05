@@ -1,0 +1,22 @@
+{
+  "name": "cmms-pro",
+  "version": "4.0.0",
+  "description": "CMMS PRO - sistem za odrzavanje (lokalni server, LAN + internet + mobilna aplikacija)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "backup": "node backup-db.js",
+    "test": "node test/smoke.js"
+  },
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "express": "^4.21.2",
+    "exceljs": "^4.4.0",
+    "multer": "^2.0.2",
+    "pdfkit": "^0.15.0",
+    "qrcode": "^1.5.4"
+  },
+  "optionalDependencies": {
+    "sqlite3": "^5.1.7"
+  }
+}

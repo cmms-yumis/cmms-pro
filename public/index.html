@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>CMMS Pro - Sistem Održavanja</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <!-- PRIJAVA -->
+  <div id="login" class="login" hidden>
+    <div class="card">
+      <div class="brand"><div class="brand-logo" style="color:#fff" data-ic="server"></div><div><b>CMMS Pro</b><small>Sistem Održavanja v4.0</small></div></div>
+      <form id="login-form" class="form" autocomplete="on">
+        <div class="f"><label for="l-user">Korisničko ime</label><input id="l-user" name="username" type="text" autocomplete="username" autocapitalize="none" required></div>
+        <div class="f"><label for="l-pass">Lozinka</label><input id="l-pass" name="password" type="password" autocomplete="current-password" required></div>
+        <div id="l-err" class="err" hidden></div>
+        <button class="btn btn-primary btn-block" style="padding:12px" type="submit">Prijavi se</button>
+      </form>
+      <div class="foot">Lokalni server održavanja &middot; LAN + Internet</div>
+    </div>
+  </div>
+
+  <!-- APLIKACIJA -->
+  <div id="app" class="app" hidden>
+    <aside class="sidebar" id="sidebar"></aside>
+
+    <div class="mobile-bar">
+      <div class="l">
+        <button class="menu" data-act="drawer" aria-label="Meni" data-ic="menu"></button>
+        <div style="display:flex;align-items:center;gap:8px"><span style="color:#60a5fa;font-size:20px" data-ic="server"></span><b>CMMS Pro</b></div>
+      </div>
+      <button class="btn btn-primary btn-sm" data-act="new-wo"><span data-ic="plus"></span> Nalog</button>
+    </div>
+    <div id="drawer" class="drawer" hidden><div class="panel" id="drawer-panel"></div></div>
+
+    <main class="main">
+      <div id="offline-bar" class="offline-bar" hidden>Nema veze sa serverom. Prijave kvarova se čuvaju na telefonu i šalju čim se veza vrati.</div>
+      <div id="pw-banner" class="pw-bar" hidden><span>Lozinka vašeg naloga je privremena.</span><button class="btn btn-primary btn-sm" data-act="pw-modal">Promeni lozinku</button></div>
+      <header class="topbar">
+        <h1 id="page-title">Kontrolna Tabla</h1>
+        <div class="top-actions">
+          <button class="btn btn-green" data-act="mobile-modal" title="Mobilni pristup"><span data-ic="phone"></span><span class="hide-sm">Mobilni Pristup</span></button>
+          <button class="btn btn-soft" data-act="sync" title="Osveži podatke sa servera"><span data-ic="refresh"></span><span class="hide-sm">Sinhronizuj</span></button>
+          <button class="btn btn-soft" data-act="export-modal" title="Izvoz i štampa"><span data-ic="printer"></span><span class="hide-sm">Izvještaji &amp; Štampa</span></button>
+        </div>
+      </header>
+      <div class="content">
+        <section id="dashboard" class="pane active"></section>
+        <section id="radni-nalozi" class="pane"></section>
+        <section id="magacin" class="pane"></section>
+        <section id="preventiva" class="pane"></section>
+        <section id="izvestaji" class="pane"></section>
+        <section id="sifarnici" class="pane"></section>
+      </div>
+    </main>
+  </div>
+
+  <div id="modals"></div>
+  <div id="toast" class="toast" hidden></div>
+
+  <style>@media(max-width:640px){.hide-sm{display:none}}</style>
+  <script src="/js/icons.js"></script>
+  <script src="/js/core.js"></script>
+  <script src="/js/print.js"></script>
+  <script src="/js/views.js"></script>
+  <script src="/js/modals.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>

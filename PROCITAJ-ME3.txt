@@ -1,0 +1,122 @@
+﻿CMMS PRO v4.0  -  UPUTSTVO
+==========================
+
+STA JE NOVO (u odnosu na staru verziju)
+- Izgled iz vašeg dizajna (dobr0_2): kontrolna tabla, radni nalozi, magacin, preventiva, baza podataka.
+- Prijava korisnika sa ulogama (Administrator, Menadzer, Majstor, Operater). Lozinke su sifrovane.
+- Radni nalog: zaduzenje majstora, zatvaranje, automatski racun zastoja, ugradnja delova sa magacina.
+- Magacin ne moze ici u minus; svaki ulaz/izlaz se upisuje u dnevnik prometa.
+- Preventiva: plan koji dospe sam otvara radni nalog (2 dana ranije); zatvaranjem naloga rok se pomera.
+- QR nalepnica za svaku masinu: skeniranjem telefon odmah otvara prijavu kvara za tu masinu.
+- Aplikacija na telefonu (otvara se u pregledacu, moze na pocetni ekran). Prijava kvara radi i bez veze:
+  cuva se na telefonu i sama se salje kada se veza vrati.
+- Automatski dnevni backup baze (folder backup), rucni backup iz programa, vracanje preko restore.bat.
+- Stampa: nalog, karta masine, zbirno po serviseru, preventiva, magacin. Izvoz: CSV i Excel.
+- Nema vise Firebase/Tailwind/CDN: sve radi na lokalnoj mrezi i bez interneta.
+
+POSTAVLJANJE (jednom, na racunaru koji je server)
+1. Instalirajte Node.js (LTS) sa https://nodejs.org (ako vec nije instaliran).
+2. Raspakujte ovaj zip PREKO stare CMMS-PRO fascikle (baza database\cmms.db ostaje, nista se ne brise).
+   Pri prvom pokretanju baza se automatski nadograduje, a prethodno se napravi kopija
+   backup\pre-v4-upgrade-DATUM.db.
+3. (Preporuceno) Dvoklik na OCISTI-STARO.bat - stari fajlovi se premeste u folder _staro.
+4. Dvoklik na POKRENI.bat. Prvi put instalira pakete (treba internet), posle toga radi i bez njega.
+   U prozoru se ispisu adrese servera, npr. http://192.168.1.20:3000
+5. Prijava: korisnik  admin  lozinka  admin123  - odmah trazi novu lozinku.
+6. Kao administrator pokrenite firewall.bat (otvara port 3000 za mrezu 192.168.0.x - 192.168.3.x;
+   adrese se menjaju na vrhu te datoteke).
+7. (Opciono) AUTOSTART-INSTALIRAJ.bat kao administrator: server se sam pokrece pri paljenju racunara.
+
+ADRESE U MREZI
+- Racunari i telefoni u firmi otvaraju adresu koju ispise server (ili dugme "Mobilni Pristup" u programu,
+  koje pokazuje sve adrese i QR kod).
+- Telefon mora biti na firminom Wi-Fi-ju. Ako su mreze 192.168.0.x do 192.168.3.x medjusobno povezane
+  (rutirane), ista adresa radi iz svih. Ako iz neke mreze ne radi, pitajte administratora mreze da dozvoli
+  saobracaj ka serveru na portu 3000.
+- Preporuka: serveru dodelite stalnu IP adresu (rezervacija u ruteru), da se adresa ne menja.
+
+PRISTUP SA INTERNETA (van firme) - izaberite jedno
+A) Tailscale (najlaksi i bezbedan; besplatan za mali tim): instalirajte Tailscale na server i na telefone;
+   aplikaciji se pristupa preko Tailscale adrese. Nista se ne otvara na ruteru. U firewall.bat dodajte
+   ,100.64.0.0/10 u ALLOW.
+B) Cloudflare Tunnel (treba domena): dobijate https adresu (npr. https://cmms.vasafirma.rs) bez otvaranja
+   portova. U config.json stavite "trustProxy": true. Adresu upisite u Baza Podataka -> Podesavanja.
+C) Port forwarding na ruteru: NE preporucuje se bez HTTPS-a. Prijava i lozinke bi isle nesifrovano.
+   Ako ipak, stavite iza reverse proxy-ja sa HTTPS-om (npr. Caddy).
+Na internetu koristite jake lozinke. Program blokira pogadjanje lozinke (8 pokusaja / 15 min).
+
+TELEFON
+- Android (Chrome): meni (tri tacke) -> "Dodaj na pocetni ekran".
+- iPhone (Safari): dugme Podeli -> "Dodaj na pocetni ekran".
+- Napomena: potpuna "instalirana" aplikacija sa kesiranjem ekrana trazi HTTPS (opcije B ili Tailscale
+  HTTPS). Na obicnom http:// u lokalnoj mrezi radi kao stranica/precica, a prijava kvara bez veze
+  i dalje radi dok je stranica otvorena.
+- QR nalepnice: Baza Podataka -> Masine -> ikona QR -> Stampaj. Nalepite na masinu.
+
+ULOGE
+- Operater: prijavljuje kvarove, vidi naloge.
+- Majstor: radi naloge, ugradjuje delove, prima robu u magacin.
+- Menadzer: sve gore + masine, planovi preventive, radnici, brisanje naloga.
+- Administrator: sve + korisnici, backup, podesavanja.
+
+BACKUP I VRACANJE
+- Automatski: jednom dnevno (posle 02:00), cuva se 30 poslednjih, folder backup.
+- Rucno: dugme "Napravi sada" u Baza Podataka, ili backup.bat. Fajl .db mozete kopirati na USB/mrezni disk.
+- Vracanje: zatvorite server, pokrenite restore.bat i izaberite backup.
+  Trenutna baza se prvo sacuva kao before-restore-*.db.
+
+PODESAVANJA (config.json, nastaje pri prvom pokretanju)
+  port (3000), host (0.0.0.0), trustProxy, backupHour, keepBackups, sessionDays
+Promena zahteva ponovno pokretanje servera.
+
+HTTPS u lokalnoj mrezi (opciono): stavite server.key i server.crt u folder certs; server dodatno slusa na
+portu 3443.
+
+OBAVESTENJA ZA MAJSTORE (novo)
+- Kad se prijavi novi kvar, svi majstori dobijaju obavestenje na telefon/tablet (Android aplikacija),
+  cak i kad je aplikacija zatvorena. Prvi koji pritisne "Prihvati" preuzima nalog; ostalima obavestenje nestaje.
+  Ako niko ne prihvati, obavestenje se ponavlja (Baza Podataka -> Podesavanja -> Podsetnik, podrazumevano 10 min).
+- Da bi "Prihvati" radilo, svaki majstor mora imati svoj nalog i biti povezan sa radnikom:
+  Baza Podataka -> Korisnici Sistema -> Novi (uloga Majstor) -> "Povezani majstor".
+- Rucno dodeljen nalog stize tom majstoru kao "Dodeljen vam je nalog" sa dugmetom "Potvrdi prijem".
+- Obavestenja dobijaju samo majstori. Menadzer/administrator ih dobijaju ako im u korisniku stavite
+  "Obavestenja o novim nalozima: Uvek".
+- U obicnom pregledacu (racunar) kad stigne novi kvar pojavi se poruka i oglasi se zvuk, dok je stranica otvorena.
+- Obavestenja rade samo dok je telefon u mrezi sa serverom (Wi-Fi firme ili Tailscale).
+  Ne koriste Google/Firebase, pa ne trebaju internet.
+
+DORADE (poslednje izmene)
+- Lozinka: prozor za promenu lozinke se pojavljuje samo odmah posle prijave i moze se odloziti ("Kasnije").
+  Pri osvezavanju stranice ne izlazi prozor; ako lozinka nije promenjena, na vrhu ostaje zuta traka sa dugmetom.
+- Operater: obrazac "Prijava Kvara" ima samo mesto, opis, prioritet i "Prijavio". Prijava se salje jednom
+  (vise klikova ne pravi vise naloga), prozor se zatvara, a majstori dobijaju obavestenje.
+  Ako se ime korisnika poklapa sa imenom u spisku Operatera Proizvodnje, "Prijavio" se popuni sam.
+- Magacin: polje za pretragu iznad liste artikala pri dopuni (i pri dodavanju dela u nalog).
+  Trazi po nazivu, sifri i lokaciji; moze vise reci ("lezaj b-4").
+- Magacin: novi artikal dobija sifru po redu 0000, 0001, ... 9999 (sifra se moze i rucno upisati).
+- Obavestenje na telefonu: dodir odmah otvara taj radni nalog (nova verzija Android aplikacije).
+- Izvestaji i Stampa: "Kvarovi po operateru proizvodnje" (jedan operater ili svi, sa zbirnim pregledom),
+  isto dugme "Po Operateru" u Radnim nalozima. Da bi se kvarovi pripisali operateru, pri prijavi treba da je
+  izabran u polju "Prijavio".
+
+KOPIJA BAZE NA DRUGO MESTO I IZVESTAJI (novo)
+- Baza Podataka -> Sigurnosne Kopije -> "Dodatna kopija na drugo mesto": upisite punu putanju USB diska ili mrezne
+  fascikle, npr.  E:\CMMS-backup   ili   \\SERVER\backup\cmms   pa "Sacuvaj i proveri".
+  Posle toga se svaki backup (dnevni i rucni) sam kopira tamo, cuva se poslednjih 30.
+- Ako USB nije prikljucen ili mreza ne radi, program pokusava ponovo na svakih 10 minuta, a administratoru
+  na Kontrolnoj tabli stoji crveno upozorenje dok se ne resi.
+- Ako server pokrece Windows kao servis/zadatak (AUTOSTART-INSTALIRAJ.bat), mapirani mrezni diskovi (Z:) NE rade;
+  koristite USB slovo diska ili UNC putanju (\\SERVER\deljenje) sa dozvolom upisa.
+- Vracanje sa USB-a: restore.bat prihvata i punu putanju, npr.  node restore-db.js "E:\CMMS-backup\cmms-....db"
+- Meni "Izvestaji" (majstor, menadzer, administrator): izbor perioda (ovaj/prosli mesec, 30 dana, godina, sve ili
+  proizvoljni datumi), pokazatelji (prosecno vreme popravke, ukupan zastoj, trosak delova, ...), grafikon naloga,
+  tabela po masinama, najvise utroseni delovi, opterecenje majstora, prijave po operaterima. Dugmad: Stampaj i CSV.
+  Datumi se racunaju po lokalnom vremenu servera.
+
+PROBLEMI
+- "Port 3000 je vec zauzet": server je vec pokrenut (zatvorite stari prozor) ili promenite port u config.json.
+- Telefon ne vidi server: isti Wi-Fi? Pokrenut firewall.bat? Proverite adresu u prozoru servera.
+- Greska pri "npm install" za sqlite3: ako imate Node.js 22.5 ili noviji, program sam koristi ugradjeni
+  SQLite i paket sqlite3 nije potreban.
+- Zaboravljena lozinka administratora: zaustavite server i u prozoru komandne linije u ovoj fascikli
+  pokrenite: node reset-admin.js NovaLozinka123
