@@ -61,11 +61,11 @@ async function load(){
  try{const d=await idb();const v=await new Promise(ok=>{const q=d.transaction('kv').objectStore('kv').get('state');q.onsuccess=()=>ok(q.result);q.onerror=()=>ok(null)});if(v){st=Object.assign(st,v);return}}catch(e){}
  try{const v=JSON.parse(localStorage.getItem('higijena')||'null');if(v)st=Object.assign(st,v)}catch(e){}
 }
-async function save(){
- st.ts=Date.now();_ri=null;
+async function save(keep){
+ if(!keep)st.ts=Date.now();_ri=null;
  try{localStorage.setItem('higijena',JSON.stringify(st))}catch(e){}
  try{const d=await idb();d.transaction('kv','readwrite').objectStore('kv').put(JSON.parse(JSON.stringify(st)),'state')}catch(e){}
- await writeFile();
+ if(!keep){await writeFile();writeGh()}
 }
 const sortW=()=>st.workers.sort((a,b)=>(a.no||9999)-(b.no||9999)||a.name.localeCompare(b.name));
 const nextNo=()=>Math.max(0,...st.workers.map(w=>w.no||0))+1;
@@ -279,6 +279,83 @@ function zipX(files){
  const z=new DataView(new ArrayBuffer(22));z.setUint32(0,0x06054b50,true);z.setUint16(8,files.length,true);z.setUint16(10,files.length,true);z.setUint32(12,cl,true);z.setUint32(16,off,true);
  return new Blob([...out,...cd,z.buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
 }
+/* ---- baza na GitHub-u (privatni repozitorijum) ---- */
+let gh=null,ghState='none',ghSha=null,ghSeen=0,ghLast='',ghErr='',ghRemote=null,gtimer=null,gq=Promise.resolve();
+const ghUrl=()=>`https://api.github.com/repos/${gh.owner}/${gh.repo}/contents/${encodeURI(gh.path)}`;
+const ghH=()=>({Authorization:'Bearer '+gh.token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'});
+const b64e=t=>{let r='';new TextEncoder().encode(t).forEach(x=>r+=String.fromCharCode(x));return btoa(r)};
+const b64d=t=>new TextDecoder().decode(Uint8Array.from(atob(t.replace(/\s/g,'')),c=>c.charCodeAt(0)));
+const nowT=()=>new Date().toTimeString().slice(0,5);
+function ghChk(r){if(r.status==401||r.status==403)throw new Error('Token nije ispravan, istekao je ili nema dozvolu ('+r.status+')');if(!r.ok)throw new Error('GitHub greška '+r.status)}
+async function ghGet(){
+ const r=await fetch(ghUrl()+'?t='+Date.now(),{headers:ghH(),cache:'no-store'});
+ if(r.status==404)return null;ghChk(r);
+ const j=await r.json();let txt;
+ if(j.content&&j.encoding=='base64')txt=b64d(j.content);
+ else txt=await(await fetch(ghUrl()+'?t='+Date.now(),{headers:Object.assign(ghH(),{Accept:'application/vnd.github.raw+json'}),cache:'no-store'})).text();
+ let d=null;try{d=JSON.parse(txt)}catch(e){}
+ return{d,sha:j.sha};
+}
+async function ghPut(){
+ const body={message:'Baza '+new Date().toISOString().slice(0,16).replace('T',' '),content:b64e(JSON.stringify(st))};
+ if(ghSha)body.sha=ghSha;
+ const r=await fetch(ghUrl(),{method:'PUT',headers:ghH(),body:JSON.stringify(body)});
+ if(r.ok){ghSha=(await r.json()).content.sha;return'ok'}
+ if(r.status==409||r.status==422)return'conflict';
+ ghChk(r);
+}
+async function ghPush(force){
+ ghState='pending';bar();
+ try{
+  let res=await ghPut();
+  if(res==='conflict'){
+   const cur=await ghGet();ghSha=cur?cur.sha:null;
+   if(cur&&cur.d&&(cur.d.ts||0)>ghSeen&&!force){ghState='conflict';bar();return}
+   res=await ghPut();if(res==='conflict')throw new Error('Sukob verzija, pokušajte ponovo');
+  }
+  ghSeen=st.ts;ghState='ok';ghLast=nowT();
+ }catch(e){ghState='err';ghErr=e instanceof TypeError?'nema internet veze':e.message}
+ bar();
+}
+function writeGh(){
+ if(!gh||ghState==='conflict')return;
+ ghState='pending';bar();clearTimeout(gtimer);
+ gtimer=setTimeout(()=>{gq=gq.then(()=>ghPush()).catch(()=>{})},1200);
+}
+async function ghPull(ask){
+ try{
+  const cur=await ghGet();
+  if(!cur||!cur.d||!cur.d.workers){ghSha=cur?cur.sha:null;await ghPush(true);return}
+  ghSha=cur.sha;ghSeen=cur.d.ts||0;
+  if(ghSeen>(st.ts||0)){
+   if(ask&&(st.workers.length||st.records.length)&&!confirm('Na GitHub-u su noviji podaci i zamenjuju podatke u pregledaču. Nastaviti?')){ghState='conflict';bar();return}
+   await adopt(cur.d);writeFile();ghState='ok';ghLast=nowT();
+  }else if(ghSeen<(st.ts||0))await ghPush(true);
+  else{ghState='ok';ghLast=nowT()}
+ }catch(e){ghState='err';ghErr=e instanceof TypeError?'nema internet veze':e.message}
+ bar();
+}
+async function ghLoad(){try{const cur=await ghGet();if(cur&&cur.d&&cur.d.workers){ghSha=cur.sha;ghSeen=cur.d.ts||0;await adopt(cur.d);writeFile();ghState='ok';ghLast=nowT();migr();render()}}catch(e){alert(e.message)}}
+async function initGh(){
+ let c=await idbGet('gh');if(!c){try{c=JSON.parse(localStorage.getItem('higijena_gh')||'null')}catch(e){}}
+ if(c&&c.token){gh=c;ghState='pending';bar();await ghPull()}
+}
+async function ghConnect(){
+ const c={owner:$('#go').value.trim(),repo:$('#gr').value.trim(),path:$('#gp').value.trim()||'baza.json',token:$('#gt').value.trim()};
+ if(!c.owner||!c.repo||!c.token){alert('Popunite korisnika, repozitorijum i token.');return}
+ try{
+  const r=await fetch(`https://api.github.com/repos/${c.owner}/${c.repo}`,{headers:{Authorization:'Bearer '+c.token,Accept:'application/vnd.github+json'},cache:'no-store'});
+  if(r.status==401){alert('Token nije ispravan ili je istekao.');return}
+  if(r.status==404||r.status==403){alert('Repozitorijum nije pronađen ili token nema pristup njemu. Proverite ime i podešavanja tokena.');return}
+  const j=await r.json();
+  if(!j.private){alert('ZAUSTAVLJENO: repozitorijum je JAVAN, pa bi podaci o zaposlenima bili vidljivi svima. Napravite PRIVATNI repozitorijum (Private) i pokušajte ponovo.');return}
+  if(j.permissions&&j.permissions.push===false){alert('Token nema pravo upisa. Potrebno je: Contents = Read and write.');return}
+  gh=c;ghSha=null;ghSeen=0;await idbSet('gh',c);try{localStorage.setItem('higijena_gh',JSON.stringify(c))}catch(e){}
+  await ghPull(true);migr();render();
+ }catch(e){alert('Povezivanje nije uspelo: '+(e instanceof TypeError?'nema internet veze':e.message))}
+}
+async function ghOff(){if(!confirm('Prekinuti vezu sa GitHub-om? Podaci na GitHub-u ostaju, a token se briše iz ovog pregledača.'))return;gh=null;ghState='none';await idbSet('gh',null);try{localStorage.removeItem('higijena_gh')}catch(e){}render()}
+window.addEventListener('beforeunload',e=>{if(ghState==='pending'){e.preventDefault();e.returnValue=''}});
 /* ---- trajna baza u fajlu (Chrome / Edge) ---- */
 const HAS_FS=typeof window.showSaveFilePicker=='function';
 let fh=null,fsState='none',lastW='',wq=Promise.resolve(),_ri=null;
@@ -291,7 +368,7 @@ function writeFile(){
  wq=wq.then(async()=>{try{const w=await fh.createWritable();await w.write(data);await w.close();fsState='ok';lastW=new Date().toTimeString().slice(0,5)}catch(e){fsState='need'}bar()}).catch(()=>{});
  return wq;
 }
-async function adopt(d){st=Object.assign({workers:[],chiefs:[],records:[],hours:{},abs:{},lastChief:'',lastShift:'1'},d);await save()}
+async function adopt(d){st=Object.assign({workers:[],chiefs:[],records:[],hours:{},abs:{},lastChief:'',lastShift:'1'},d);await save(true)}
 async function syncFile(){
  try{
   const t=await(await fh.getFile()).text();let d=null;try{d=JSON.parse(t)}catch(e){}
@@ -323,12 +400,19 @@ async function linkOpen(){
 }
 function bar(){
  const b=document.getElementById('bar');if(!b)return;
- let c,h;
- if(!HAS_FS){c='err';h='Ovaj pregledač ne može da čuva bazu u fajl. Koristite Chrome ili Edge i redovno pravite rezervnu kopiju.'}
- else if(!fh){c='warn';h='Baza je samo u pregledaču i briše se čišćenjem keša. <button class="g" onclick="tab=\'bk\';render()">Poveži fajl baze</button>'}
- else if(fsState!=='ok'){c='warn';h='Veza sa fajlom baze „'+esc(fh.name)+'“ je prekinuta. <button class="g" onclick="resume()">Nastavi čuvanje u fajl</button>'}
- else{c='ok';h='✓ Baza se automatski čuva u fajl „'+esc(fh.name)+'“'+(lastW?' (poslednje čuvanje '+lastW+')':'')}
- b.className='noprint '+c;b.innerHTML=h;
+ const parts=[];let cls='ok';const O={ok:0,warn:1,err:2},w=c=>{if(O[c]>O[cls])cls=c};
+ if(fh){if(fsState==='ok')parts.push('✓ fajl „'+esc(fh.name)+'“'+(lastW?' ('+lastW+')':''));else{w('warn');parts.push('veza sa fajlom „'+esc(fh.name)+'“ je prekinuta <button class="g" onclick="resume()">Nastavi čuvanje u fajl</button>')}}
+ if(gh){
+  if(ghState==='ok')parts.push('✓ GitHub ('+esc(ghLast)+')');
+  else if(ghState==='pending')parts.push('čuvanje na GitHub…');
+  else if(ghState==='conflict'){w('warn');parts.push('na GitHub-u su podaci izmenjeni sa drugog računara <button class="g" onclick="ghLoad()">Učitaj sa GitHub-a</button><button class="g" onclick="ghPush(true)">Prepiši GitHub ovim podacima</button>')}
+  else if(ghState==='err'){w('err');parts.push('GitHub: '+esc(ghErr)+' <button class="g" onclick="ghPush(true)">Pokušaj ponovo</button> <button class="g" onclick="tab=\'bk\';render()">Podešavanja</button>')}
+ }
+ if(!fh&&!gh){
+  if(HAS_FS){w('warn');parts.push('Baza je samo u pregledaču i briše se čišćenjem keša. <button class="g" onclick="tab=\'bk\';render()">Poveži bazu</button>')}
+  else{w('err');parts.push('Baza je samo u pregledaču i briše se čišćenjem keša. <button class="g" onclick="tab=\'bk\';render()">Poveži GitHub</button>')}
+ }
+ b.className='noprint '+cls;b.innerHTML='Baza: '+parts.join(' &nbsp;|&nbsp; ');
 }
 function migr(){if(st.workers.some(w=>!w.no)){let n=Math.max(0,...st.workers.map(w=>w.no||0));st.workers.forEach(w=>{if(!w.no)w.no=++n});sortW();save()}}
 /* ---- uputstvo ---- */
@@ -362,7 +446,12 @@ function up(){
  <li>Od tada se svaka promena automatski upisuje u taj fajl. Na vrhu strane stoji zelena poruka „Baza se automatski čuva“.</li>
  <li>Ako se pojavi žuta poruka, kliknite „Nastavi čuvanje u fajl“ (pregledač povremeno traži dozvolu nakon ponovnog pokretanja).</li>
  <li>Posle čišćenja keša otvorite stranu, idite na Rezerva i kliknite „Otvori postojeći fajl baze“, pa izaberite isti fajl. Svi podaci se vraćaju. Fajl baze ne brišite i ne premeštajte.</li></ol>
- <h3>7. Rezerva (backup)</h3>
+ <h3>7. Baza na GitHub-u</h3>
+ <ol><li>Napravite <b>privatni</b> repozitorijum (npr. yumis-baza) i fine-grained token sa pravom Contents: Read and write samo za taj repozitorijum. Koraci su u kartici Rezerva, pod „Kako da napravim repozitorijum i token“.</li>
+ <li>U kartici Rezerva upišite korisnika, repozitorijum i token, pa „Poveži i testiraj“. Program odbija javne repozitorijume.</li>
+ <li>Od tada se svaka promena sama upisuje na GitHub (traka na vrhu pokazuje stanje). Posle čišćenja keša samo ponovo unesite isti token i repozitorijum, i podaci se vraćaju.</li>
+ <li>Ako rade dva računara, uvek sačekajte „✓ GitHub“ pre zatvaranja strane. Ako traka javi da su podaci izmenjeni sa drugog računara, izaberite „Učitaj sa GitHub-a“.</li></ol>
+ <h3>8. Rezerva (backup)</h3>
  <p>Podaci se čuvaju u pregledaču na ovom računaru. Povremeno (npr. jednom nedeljno) kliknite „Preuzmi rezervnu kopiju“ i sačuvajte fajl na USB ili drugi disk. Ako se podaci izgube ili prelazite na drugi računar, izaberite taj fajl u polju „Vrati iz rezervne kopije“.</p>
  <h3>Važno</h3>
  <ul><li>Uvek otvarajte isti fajl u istom pregledaču, inače nećete videti sačuvane podatke.</li>
@@ -371,7 +460,18 @@ function up(){
 }
 /* ---- backup ---- */
 function bk(){
- $('#app').innerHTML=`<div class="card"><h3 style="margin-top:0">Trajna baza u fajlu (preporučeno)</h3>
+ const own=location.hostname.endsWith('.github.io')?location.hostname.split('.')[0]:'';
+ $('#app').innerHTML=`<div class="card"><h3 style="margin-top:0">Baza na GitHub-u (u vašem nalogu)</h3>
+ <p>Podaci se pri svakoj promeni automatski upisuju u <b>PRIVATNI</b> repozitorijum na vašem GitHub nalogu. Radi u svakom pregledaču, a isti podaci se vide sa svakog računara na kojem se poveže ista baza. Aplikacija odbija da se poveže ako je repozitorijum javan.</p>
+ ${gh?`<p><b>Povezano:</b> ${esc(gh.owner)}/${esc(gh.repo)} (fajl ${esc(gh.path)})</p><button class="g" onclick="ghOff()">Prekini vezu</button>`:`<div class="row"><div><label>GitHub korisnik</label><input id="go" value="${esc(own)}"></div><div><label>Privatni repozitorijum</label><input id="gr" placeholder="npr. yumis-baza"></div><div><label>Fajl</label><input id="gp" value="baza.json"></div><div><label>Token</label><input id="gt" type="password" style="width:240px" autocomplete="off"></div><button class="b" onclick="ghConnect()">Poveži i testiraj</button></div>`}
+ <details><summary style="cursor:pointer;margin-top:8px">Kako da napravim repozitorijum i token (korak po korak)</summary><ol>
+ <li>Na github.com kliknite <b>New repository</b>. Ime npr. <b>yumis-baza</b>, obavezno izaberite <b>Private</b> i štiklirajte „Add a README file“. Kliknite Create repository.</li>
+ <li>Gore desno: slika profila, pa <b>Settings</b>, pa na dnu levo <b>Developer settings</b>, pa <b>Personal access tokens</b>, pa <b>Fine-grained tokens</b>, pa <b>Generate new token</b>.</li>
+ <li>Upišite ime (npr. higijena) i rok važenja. U <b>Repository access</b> izaberite <b>Only select repositories</b> i samo repozitorijum yumis-baza.</li>
+ <li>U <b>Permissions</b>, pa <b>Repository permissions</b>, nađite <b>Contents</b> i postavite <b>Read and write</b>. Kliknite Generate token.</li>
+ <li>Kopirajte token (počinje sa github_pat_) i nalepite ga gore u polje „Token“. Kliknite „Poveži i testiraj“.</li>
+ <li>Token važi do roka koji ste izabrali. Kad istekne, napravite novi i povežite ponovo. Podaci u repozitorijumu ostaju.</li></ol></details></div>
+ <div class="card"><h3 style="margin-top:0">Trajna baza u fajlu (Chrome / Edge)</h3>
  <p>Podaci se pri svakoj promeni automatski upisuju u jedan fajl na vašem računaru (isti fajl se ažurira, ne pravi se kopija). Tako ih ne briše čišćenje keša pregledača.</p>
  <p><b>Status:</b> ${!HAS_FS?'ovaj pregledač to ne podržava (koristite Chrome ili Edge)':!fh?'fajl nije povezan':fsState==='ok'?'povezan sa fajlom „'+esc(fh.name)+'“ i automatski se čuva':'veza je prekinuta, kliknite „Nastavi čuvanje u fajl“ na vrhu strane'}</p>
  ${HAS_FS?`<div class="row"><button class="b" onclick="linkNew()">Napravi novi fajl baze</button><button class="b" onclick="linkOpen()">Otvori postojeći fajl baze</button></div>
@@ -382,5 +482,5 @@ function bk(){
 }
 function exp(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(st)],{type:'application/json'}));a.download='higijena-backup-'+today()+'.json';a.click()}
 function imp(i){const f=i.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!d.workers)throw 0;if(!confirm('Ovo zamenjuje trenutne podatke. Nastaviti?'))return;st=Object.assign(st,d);await save();alert('Podaci vraćeni.');tab='ev';render()}catch(e){alert('Neispravan fajl.')}};r.readAsText(f)}
-load().then(async()=>{migr();render();await initFile();migr();render()});
+load().then(async()=>{migr();render();await initFile();await initGh();migr();render()});
 </script></body></html>
