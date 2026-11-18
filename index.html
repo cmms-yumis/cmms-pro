@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="sr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Evidencija higijene zaposlenih</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--tx:#1d2330;--mu:#6b7385;--ac:#d6001c;--bd:#d9dde5}
+@media(prefers-color-scheme:dark){:root{--bg:#171a21;--card:#222733;--tx:#e8eaf0;--mu:#9aa2b5;--bd:#363d4d}}
+*{box-sizing:border-box}body{margin:0;font:15px system-ui,Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--tx)}
+header{background:var(--ac);color:#fff;padding:12px 20px;font-weight:700;font-size:18px}
+nav{display:flex;gap:6px;padding:12px 20px 0;flex-wrap:wrap}
+nav button{border:1px solid var(--bd);background:var(--card);color:var(--tx);padding:9px 16px;border-radius:8px 8px 0 0;cursor:pointer;font-size:15px}
+nav button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+main{padding:16px 20px;max-width:1200px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:16px;margin-bottom:16px}
+label{font-size:13px;color:var(--mu);display:block;margin-bottom:3px}
+input,select{font:inherit;padding:7px 9px;border:1px solid var(--bd);border-radius:6px;background:var(--card);color:var(--tx)}
+.row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-bottom:12px}
+button.b{background:var(--ac);color:#fff;border:0;padding:9px 18px;border-radius:7px;cursor:pointer;font-size:15px}
+button.g{background:transparent;color:var(--tx);border:1px solid var(--bd);padding:7px 12px;border-radius:7px;cursor:pointer}
+table.t{border-collapse:collapse;width:100%}
+.t th,.t td{border:1px solid var(--bd);padding:5px 6px;text-align:left;font-size:14px}
+.t th{background:var(--bg);font-size:12px}
+.t select{padding:4px}
+.wl th,.wl td{padding:2px;text-align:center;font-size:12px}.wl .we{background:#e3e3e3;color:#000}.wl th.we{background:#f4b6bd}.wl input.h{width:30px;padding:3px 1px;text-align:center;font-size:12px;background:transparent}@media print{.wl{font-size:10px}}
+ #bar{padding:8px 20px;font-size:14px}#bar.warn{background:#fff3cd;color:#664d03}#bar.ok{background:#e6f4ea;color:#14532d}#bar.err{background:#fde7e9;color:#7a0f1c}#bar button{margin-left:10px;color:inherit}
+.ok{color:#1a8f3c;font-weight:600}
+.msg{color:#1a8f3c;margin-left:10px}
+/* obrazac za stampu */
+.page{background:#fff;color:#000;padding:14px;margin-bottom:20px;border:1px solid var(--bd);font-family:Arial,sans-serif}
+.page table{border-collapse:collapse;width:100%}
+.page td,.page th{border:1px solid #000;padding:3px 5px;font-size:12px;text-align:center}
+.page .hd td{font-size:13px}
+.logo{display:inline-block;background:#d6001c;color:#fff;font-weight:900;font-size:20px;padding:10px 18px;border-radius:50%}
+.page h4{font-weight:400;font-size:14px;margin:14px 0 10px;text-transform:uppercase}
+@media print{
+ @page{size:A4 landscape;margin:10mm}
+ header,nav,.noprint{display:none!important}
+ body{background:#fff}main{padding:0;max-width:none}
+ .card{border:0;padding:0;margin:0;background:none}
+ .page{border:0;padding:0;margin:0;page-break-after:always}
+ .page:last-child{page-break-after:auto}
+ thead{display:table-header-group}tr{page-break-inside:avoid}
+}
+</style></head><body>
+<header>Evidencija kontrole održavanja higijene zaposlenih</header>
+<div id="bar" class="noprint"></div>
+<nav id="nav"></nav>
+<main id="app"></main>
+<script>
+const NAMES=['Propisana radna odeća i obuća','Uredan izgled','Nošenje nakita','Lakirani nokti','Zabrana hrane u pogonu','Zabrana pušenja','Zabrana alkohola'];
+const DEF=['Da','Da','Ne','Ne','Da','Da','Da'];
+let st={workers:[],chiefs:[],records:[],hours:{},abs:{},lastChief:'',lastShift:'1'};
+let tab='ev',ui={date:null,shift:'1',pf:{wid:'',from:'',to:'',shift:'',chief:''}};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const today=()=>new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
+const fd=i=>i.split('-').reverse().join('.')+'.';
+/* baza: IndexedDB + rezerva u localStorage */
+const idb=()=>new Promise((ok,no)=>{const r=indexedDB.open('higijena',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)});
+async function load(){
+ try{const d=await idb();const v=await new Promise(ok=>{const q=d.transaction('kv').objectStore('kv').get('state');q.onsuccess=()=>ok(q.result);q.onerror=()=>ok(null)});if(v){st=Object.assign(st,v);return}}catch(e){}
+ try{const v=JSON.parse(localStorage.getItem('higijena')||'null');if(v)st=Object.assign(st,v)}catch(e){}
+}
+async function save(){
+ st.ts=Date.now();_ri=null;
+ try{localStorage.setItem('higijena',JSON.stringify(st))}catch(e){}
+ try{const d=await idb();d.transaction('kv','readwrite').objectStore('kv').put(JSON.parse(JSON.stringify(st)),'state')}catch(e){}
+ await writeFile();
+}
+const sortW=()=>st.workers.sort((a,b)=>(a.no||9999)-(b.no||9999)||a.name.localeCompare(b.name));
+const nextNo=()=>Math.max(0,...st.workers.map(w=>w.no||0))+1;
+function render(){
+ $('#nav').innerHTML=[['ev','Dnevna evidencija'],['pr','Štampa / pregled'],['wl','Radna lista'],['sta','Statistika'],['wk','Radnici'],['ch','Šefovi'],['bk','Rezerva (backup)'],['up','Uputstvo']]
+  .map(([k,n])=>`<button class="${tab==k?'on':''}" onclick="tab='${k}';render()">${n}</button>`).join('');
+ ({ev,pr,wl,sta,wk,ch,bk,up})[tab]();bar();
+}
+/* ---- dnevna evidencija ---- */
+function ev(){
+ ui.date=ui.date||today();
+ const ws=st.workers.filter(w=>w.active!==false);
+ const ex=st.records.filter(r=>r.date==ui.date&&r.shift==ui.shift);
+ const chiefSel=ex[0]?.chief||st.lastChief;
+ $('#app').innerHTML=`<div class="card"><div class="row">
+ <div><label>Datum</label><input type="date" id="d" value="${ui.date}" onchange="ui.date=this.value;render()"></div>
+ <div><label>Smena</label><select id="s" onchange="ui.shift=this.value;render()">${['1','2','3'].map(x=>`<option value="${x}" ${ui.shift==x?'selected':''}>${x}. smena</option>`).join('')}</select></div>
+ <div><label>Kontrolisao (šef)</label><select id="c">${st.chiefs.map(c=>`<option ${c.name==chiefSel?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+ <button class="b" onclick="saveEv()">Sačuvaj evidenciju</button><button class="g" onclick="allAb('DP')" title="Označi DP svim radnicima (državni praznik)">DP svima</button><span class="msg" id="m"></span></div>
+ ${!st.chiefs.length?'<p class="msg" style="color:var(--ac)">Prvo dodajte šefove (kartica „Šefovi“).</p>':''}
+ ${!ws.length?'<p class="msg" style="color:var(--ac)">Prvo dodajte radnike (kartica „Radnici“).</p>':''}
+ <table class="t"><tr><th title="Radi (označi sve)"><input type="checkbox" onchange="allC(this.checked)"></th><th title="Kresna slava">KS</th><th title="Godišnji odmor">GO</th><th title="Bolovanje">BO</th><th title="Plaćeno odsustvo">PO</th><th title="Državni praznik">DP</th><th>Zaposleni</th>${NAMES.map(n=>`<th>${n}</th>`).join('')}<th>Korektivna mera</th></tr>
+ ${ws.map(w=>{const r=ex.find(x=>x.wid==w.id);const v=r?r.v:DEF;return `<tr data-w="${w.id}"><td><input type="checkbox" class="ck" ${r?'checked':''} onchange="ckC(this)"></td>${CODES.map(c=>`<td><input type="checkbox" class="ab" data-c="${c}" ${(st.abs||{})[w.id+'|'+ui.date]==c?'checked':''} onchange="abC(this)"></td>`).join('')}<td>${esc(w.name)}</td>${v.map(x=>`<td><select>${['Da','Ne'].map(o=>`<option ${x==o?'selected':''}>${o}</option>`).join('')}</select></td>`).join('')}<td><input class="cm" style="width:140px" value="${esc(r?.cm||'')}"></td></tr>`}).join('')}</table></div>`;
+}
+function ckC(el){if(el.checked)el.closest('tr').querySelectorAll('.ab').forEach(a=>a.checked=false)}
+function abC(el){const tr=el.closest('tr');if(el.checked){tr.querySelectorAll('.ab').forEach(a=>{if(a!==el)a.checked=false});tr.querySelector('.ck').checked=false}}
+function allAb(c){document.querySelectorAll('tr[data-w]').forEach(tr=>{const a=tr.querySelector('.ab[data-c="'+c+'"]');if(a){a.checked=true;abC(a)}})}
+function allC(on){document.querySelectorAll('tr[data-w]').forEach(tr=>{tr.querySelector('.ck').checked=on;if(on)tr.querySelectorAll('.ab').forEach(a=>a.checked=false)})}
+async function saveEv(){
+ const chief=$('#c').value;if(!chief){alert('Izaberite šefa (Kontrolisao).');return}
+ st.records=st.records.filter(r=>!(r.date==ui.date&&r.shift==ui.shift));
+ document.querySelectorAll('tr[data-w]').forEach(tr=>{
+  const wid=tr.dataset.w,ak=wid+'|'+ui.date,ab=tr.querySelector('.ab:checked');
+  st.abs=st.abs||{};
+  if(ab)st.abs[ak]=ab.dataset.c;else delete st.abs[ak];
+  if(!tr.querySelector('.ck').checked)return;
+  const sel=[...tr.querySelectorAll('select')].map(s=>s.value);
+  st.records.push({id:uid(),wid:tr.dataset.w,date:ui.date,shift:ui.shift,chief,v:sel,cm:tr.querySelector('.cm').value});
+ });
+ st.lastChief=chief;await save();$('#m').textContent='Sačuvano ✓';setTimeout(()=>{const m=$('#m');if(m)m.textContent=''},2500);
+}
+/* ---- stampa ---- */
+function pr(){
+ const f=ui.pf;
+ $('#app').innerHTML=`<div class="card noprint"><div class="row">
+ <div><label>Radnik</label><select onchange="ui.pf.wid=this.value;pv()"><option value="">Svi radnici</option>${st.workers.map(w=>`<option value="${w.id}" ${f.wid==w.id?'selected':''}>${esc(w.name)}</option>`).join('')}</select></div>
+ <div><label>Od datuma</label><input type="date" value="${f.from}" onchange="ui.pf.from=this.value;pv()"></div>
+ <div><label>Do datuma</label><input type="date" value="${f.to}" onchange="ui.pf.to=this.value;pv()"></div>
+ <div><label>Smena</label><select onchange="ui.pf.shift=this.value;pv()"><option value="">Sve</option>${['1','2','3'].map(x=>`<option value="${x}" ${f.shift==x?'selected':''}>${x}. smena</option>`).join('')}</select></div>
+ <div><label>Kontrolisao</label><select onchange="ui.pf.chief=this.value;pv()"><option value="">Svi</option>${st.chiefs.map(c=>`<option ${f.chief==c.name?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+ <button class="b" onclick="window.print()">Štampaj</button></div></div><div id="pv"></div>`;
+ pv();
+}
+function pv(){
+ const f=ui.pf;
+ const recs=st.records.filter(r=>(!f.wid||r.wid==f.wid)&&(!f.from||r.date>=f.from)&&(!f.to||r.date<=f.to)&&(!f.shift||r.shift==f.shift)&&(!f.chief||r.chief==f.chief));
+ const ids=[...new Set(recs.map(r=>r.wid))];
+ if(!ids.length){$('#pv').innerHTML='<div class="card">Nema podataka za izabrane filtere.</div>';return}
+ $('#pv').innerHTML=ids.map(id=>{
+  const w=st.workers.find(x=>x.id==id)||{name:'(obrisan radnik)',period:''};
+  const rs=recs.filter(r=>r.wid==id).sort((a,b)=>a.date.localeCompare(b.date)||a.shift.localeCompare(b.shift));
+  return `<div class="page"><table class="hd"><tr><td rowspan="3" style="width:18%"><span class="logo">YUMIS</span></td>
+  <td rowspan="3" style="font-weight:700;font-style:italic;font-size:15px">EVIDENCIJA KONTROLE ODRŽAVANJA HIGIJENE<br>ZAPOSLENIH</td>
+  <td style="width:24%;text-align:left;font-style:italic">Obrazac: YUM-71.03.005</td></tr>
+  <tr><td style="text-align:left;font-style:italic">Izdanje: A &nbsp;&nbsp; Revizija: 01</td></tr>
+  <tr><td style="text-align:left;font-style:italic">Datum: 15.11.2018.</td></tr></table>
+  <h4>Ime i prezime zaposlenog: <b>${esc(w.name)}</b></h4>
+  <h4>Period važenja sanitarnog pregleda: <b>${esc(w.period||'')}</b></h4>
+  <table><thead><tr><th rowspan="2">Datum</th><th rowspan="2">Propisana radna odeća i obuća</th><th rowspan="2">Uredan izgled</th><th rowspan="2">Nošenje nakita</th><th rowspan="2">Lakirani nokti</th><th colspan="3">Nehigijensko ponašanje:</th><th rowspan="2">Kontrolisao</th><th rowspan="2">Korektivna mera</th></tr>
+  <tr><th>Zabrana hrane u pogonu</th><th>Zabrana pušenja</th><th>Zabrana alkohola</th></tr></thead><tbody>
+  ${rs.map(r=>`<tr><td>${fd(r.date)}</td>${r.v.map(x=>`<td>${x}</td>`).join('')}<td>${esc(r.chief)}</td><td>${esc(r.cm)}</td></tr>`).join('')}</tbody></table></div>`;
+ }).join('');
+}
+/* ---- radnici / sefovi ---- */
+function wk(){
+ $('#app').innerHTML=`<div class="card"><div class="row"><div><label>Redni broj</label><input id="wno" type="number" min="1" style="width:80px" value="${nextNo()}"></div><div><label>Ime i prezime</label><input id="wn"></div><div><label>Period važenja sanitarnog pregleda</label><input id="wp" placeholder="npr. 01.03.2026 - 01.03.2027"></div><button class="b" onclick="addW()">Dodaj radnika</button></div>
+ <table class="t"><tr><th>Br.</th><th>Ime i prezime</th><th>Sanitarni pregled</th><th>Aktivan</th><th></th></tr>
+ ${st.workers.map(w=>`<tr><td><input type="number" min="1" style="width:64px" value="${w.no||''}" onchange="upN('${w.id}',this.value)"></td><td>${esc(w.name)}</td><td><input value="${esc(w.period||'')}" onchange="upW('${w.id}',this.value)"></td><td><input type="checkbox" ${w.active!==false?'checked':''} onchange="actW('${w.id}',this.checked)"></td><td><button class="g" onclick="delW('${w.id}')">Obriši</button></td></tr>`).join('')}</table>
+ <p style="color:var(--mu);font-size:13px">Neaktivan radnik se ne prikazuje u dnevnoj evidenciji, a stari zapisi ostaju sačuvani.</p></div>`;
+}
+async function addW(){const n=$('#wn').value.trim();if(!n)return;st.workers.push({id:uid(),no:parseInt($('#wno').value)||nextNo(),name:n,period:$('#wp').value.trim(),active:true});sortW();await save();wk()}
+async function upN(id,v){st.workers.find(w=>w.id==id).no=parseInt(v)||nextNo();sortW();await save();wk()}
+async function upW(id,v){st.workers.find(w=>w.id==id).period=v;await save()}
+async function actW(id,v){st.workers.find(w=>w.id==id).active=v;await save()}
+async function delW(id){if(!confirm('Obrisati radnika i sve njegove zapise?'))return;st.workers=st.workers.filter(w=>w.id!=id);st.records=st.records.filter(r=>r.wid!=id);Object.keys(st.abs||{}).forEach(k=>{if(k.startsWith(id+'|'))delete st.abs[k]});await save();wk()}
+function ch(){
+ $('#app').innerHTML=`<div class="card"><div class="row"><div><label>Ime i prezime šefa</label><input id="cn"></div><button class="b" onclick="addC()">Dodaj šefa</button></div>
+ <table class="t"><tr><th>Šef (Kontrolisao)</th><th></th></tr>${st.chiefs.map(c=>`<tr><td>${esc(c.name)}</td><td><button class="g" onclick="delC('${c.id}')">Obriši</button></td></tr>`).join('')}</table></div>`;
+}
+async function addC(){const n=$('#cn').value.trim();if(!n)return;st.chiefs.push({id:uid(),name:n});await save();ch()}
+async function delC(id){if(!confirm('Obrisati šefa? Stari zapisi zadržavaju njegovo ime.'))return;st.chiefs=st.chiefs.filter(c=>c.id!=id);await save();ch()}
+/* ---- radna lista ---- */
+const MN=['Januar','Februar','Mart','April','Maj','Jun','Jul','Avgust','Septembar','Oktobar','Novembar','Decembar'];
+const DN=['ne','po','ut','sr','če','pe','su'];
+function hrs(wid,d){const k=wid+'|'+d;if(st.hours&&k in st.hours)return st.hours[k];if(st.abs&&st.abs[k])return st.abs[k];if(!_ri)_ri=new Set(st.records.map(r=>r.wid+'|'+r.date));return _ri.has(k)?8:''}
+function wlData(){
+ ui.wm=ui.wm||today().slice(0,7);
+ const [y,m]=ui.wm.split('-').map(Number),n=new Date(y,m,0).getDate();
+ const days=[...Array(n)].map((_,i)=>{const g=new Date(y,m-1,i+1).getDay();return{d:i+1,iso:ui.wm+'-'+String(i+1).padStart(2,'0'),wd:DN[g],we:g==0||g==6}});
+ const ws=st.workers.filter(w=>w.active!==false||days.some(x=>hrs(w.id,x.iso)!==''));
+ return{y,m,days,ws};
+}
+const rowSum=(w,days)=>days.reduce((s,x)=>s+(Number(hrs(w.id,x.iso))||0),0);
+function wl(){
+ const {y,m,days,ws}=wlData();
+ $('#app').innerHTML=`<div class="card"><div class="row"><div><label>Mesec</label><input type="month" value="${ui.wm}" onchange="ui.wm=this.value||ui.wm;render()"></div>
+ <button class="b" onclick="expXlsx()">Izvezi u Excel</button></div>
+ <p style="color:var(--mu);font-size:13px">Kod radnika koji je štikliran u dnevnoj evidenciji automatski se upisuje 8, a za odsutne se upisuje KS, GO, BO, PO ili DP. Polje možete i ručno izmeniti (npr. 12, 4 ili prazno).</p>
+ <div style="overflow-x:auto"><table class="t wl"><tr><th rowspan="2">Br.</th><th rowspan="2">Radnik — ${MN[m-1]} ${y}.</th>${days.map(x=>`<th class="${x.we?'we':''}">${x.d}</th>`).join('')}<th rowspan="2">Ukupno</th></tr>
+ <tr>${days.map(x=>`<th class="${x.we?'we':''}">${x.wd}</th>`).join('')}</tr>
+ ${ws.map(w=>`<tr><td>${w.no||''}</td><td style="white-space:nowrap">${esc(w.name)}</td>${days.map(x=>`<td class="${x.we?'we':''}"><input class="h" value="${hrs(w.id,x.iso)}" onchange="setH('${w.id}','${x.iso}',this.value)"></td>`).join('')}<td id="t_${w.id}"><b>${rowSum(w,days)}</b></td></tr>`).join('')}</table></div>
+ ${!ws.length?'<p>Nema radnika.</p>':''}</div>`;
+}
+async function setH(wid,iso,v){
+ v=v.trim().replace(',','.');st.hours=st.hours||{};
+ const U=v.toUpperCase();st.hours[wid+'|'+iso]=CODES.includes(U)?U:(v===''||isNaN(v)?'':Number(v));
+ await save();
+ const {days}=wlData(),w=st.workers.find(x=>x.id==wid);
+ const c=document.getElementById('t_'+wid);if(c&&w)c.innerHTML='<b>'+rowSum(w,days)+'</b>';
+ const i=document.activeElement;if(i&&i.classList.contains('h'))i.value=hrs(wid,iso);
+}
+function colL(n){let s='';n++;while(n>0){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26)}return s}
+const xe=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const CODES=['KS','GO','BO','PO','DP'];
+const XH='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+const splitName=w=>{const p=w.name.trim().split(/\s+/);return[p[0]||'',p.slice(1).join(' ')]};
+function dl(blob,name){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click()}
+const cs=(c,r,v,s)=>v===''||v==null?`<c r="${colL(c)}${r}" s="${s}"/>`:typeof v=='number'?`<c r="${colL(c)}${r}" s="${s}"><v>${v}</v></c>`:`<c r="${colL(c)}${r}" t="inlineStr" s="${s}"><is><t>${xe(v)}</t></is></c>`;
+const cf=(c,r,f,v,s)=>`<c r="${colL(c)}${r}" s="${s}"><f>${f}</f><v>${v}</v></c>`;
+function sheetX(cols,rows,xs,merges){
+ return XH+`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0"><pane xSplit="${xs}" ySplit="3" topLeftCell="${colL(xs)}4" activePane="bottomRight" state="frozen"/></sheetView></sheetViews><cols>${cols}</cols><sheetData>${rows}</sheetData><mergeCells count="${merges.length}">${merges.map(m=>`<mergeCell ref="${m}"/>`).join('')}</mergeCells><pageMargins left="0.3" right="0.3" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>`;
+}
+function mkXlsx(sheet,name){
+ const K='<color auto="1"/>',B=`<border><left style="thin">${K}</left><right style="thin">${K}</right><top style="thin">${K}</top><bottom style="thin">${K}</bottom><diagonal/></border>`;
+ const styles=XH+`<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFD9D9D9"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF4B6BD"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border>${B}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="8"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/><xf fontId="1" applyFont="1"/><xf fillId="2" borderId="1" applyFill="1" applyBorder="1"><alignment horizontal="center"/></xf><xf fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf fontId="1" fillId="3" borderId="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf><xf borderId="1" applyBorder="1"><alignment horizontal="center"/></xf><xf fontId="1" borderId="1" applyFont="1" applyBorder="1"><alignment horizontal="center"/></xf><xf borderId="1" applyBorder="1"><alignment horizontal="left" vertical="center"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+ return zipX([
+  ['[Content_Types].xml',XH+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+  ['_rels/.rels',XH+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
+  ['xl/workbook.xml',XH+`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${name}" sheetId="1" r:id="rId1"/></sheets></workbook>`],
+  ['xl/_rels/workbook.xml.rels',XH+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+  ['xl/styles.xml',styles],['xl/worksheets/sheet1.xml',sheet]]);
+}
+function expXlsx(){
+ const {y,m,days,ws}=wlData(),nc=days.length+4;
+ let rows=`<row r="1">${cs(0,1,'Radna lista — '+MN[m-1]+' '+y+'.',1)}</row>`;
+ rows+=`<row r="2">${cs(0,2,'Br.',3)}${cs(1,2,'Ime',3)}${cs(2,2,'Prezime',3)}${days.map((x,i)=>cs(i+3,2,x.d,x.we?4:3)).join('')}${cs(nc-1,2,'Ukupno',3)}</row>`;
+ rows+=`<row r="3">${cs(0,3,'',3)}${cs(1,3,'',3)}${cs(2,3,'',3)}${days.map((x,i)=>cs(i+3,3,x.wd,x.we?4:3)).join('')}${cs(nc-1,3,'',3)}</row>`;
+ ws.forEach((w,j)=>{const r=j+4,tot=rowSum(w,days),[a,b]=splitName(w);
+  rows+=`<row r="${r}">${cs(0,r,w.no||j+1,5)}${cs(1,r,a,7)}${cs(2,r,b,7)}${days.map((x,i)=>{const h=hrs(w.id,x.iso);return cs(i+3,r,h===''?'':(isNaN(h)?h:Number(h)),x.we?2:5)}).join('')}${cf(nc-1,r,`SUM(D${r}:${colL(nc-2)}${r})`,tot,6)}</row>`});
+ const cols=`<col min="1" max="1" width="4.5" customWidth="1"/><col min="2" max="2" width="14" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="${nc-1}" width="3.3" customWidth="1"/><col min="${nc}" max="${nc}" width="7.5" customWidth="1"/>`;
+ dl(mkXlsx(sheetX(cols,rows,3,['A2:A3','B2:B3','C2:C3',`${colL(nc-1)}2:${colL(nc-1)}3`]),'Radna lista'),`radna-lista-${ui.wm}.xlsx`);
+}
+/* ---- statistika ---- */
+const RM=['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'];
+function stData(y){
+ const rows=[];
+ st.workers.forEach(w=>{
+  const o={w,days:0,sum:0,we:0,mon:Array(12).fill(0)};CODES.forEach(c=>o[c]=0);let any=false;
+  for(let m=1;m<=12;m++){const n=new Date(y,m,0).getDate();
+   for(let d=1;d<=n;d++){
+    const v=hrs(w.id,`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`);
+    if(v==='')continue;any=true;
+    if(CODES.includes(v)){o[v]++;continue}
+    const h=Number(v);
+    if(h>0){o.days++;o.sum+=h;o.mon[m-1]++;const g=new Date(y,m-1,d).getDay();if(g==0||g==6)o.we++}
+   }}
+  if(w.active!==false||any)rows.push(o);
+ });
+ const tot={days:0,sum:0,we:0,mon:Array(12).fill(0)};CODES.forEach(c=>tot[c]=0);
+ rows.forEach(o=>{['days','sum','we',...CODES].forEach(k=>tot[k]+=o[k]);o.mon.forEach((x,i)=>tot.mon[i]+=x)});
+ return{rows,tot};
+}
+function sta(){
+ ui.sy=ui.sy||new Date().getFullYear();
+ const {rows,tot}=stData(ui.sy);
+ $('#app').innerHTML=`<div class="card"><div class="row"><div><label>Godina</label><input type="number" min="2000" max="2100" style="width:100px" value="${ui.sy}" onchange="ui.sy=parseInt(this.value)||ui.sy;render()"></div>
+ <button class="b" onclick="expStat()">Izvezi statistiku u Excel</button></div>
+ <p style="color:var(--mu);font-size:13px">Statistika se računa iz Radne liste za izabranu godinu. Radni dan je dan sa upisanim satima (npr. 8). „Rad vikendom“ su radni dani koji padaju na subotu ili nedelju. KS = Kresna slava, GO = godišnji odmor, BO = bolovanje, PO = plaćeno odsustvo, DP = državni praznik (brojevi su u danima).</p>
+ <div style="overflow-x:auto"><table class="t wl"><tr><th rowspan="2">Br.</th><th rowspan="2">Radnik</th><th rowspan="2">Radnih dana</th><th rowspan="2">Sati ukupno</th><th rowspan="2">Rad vikendom</th>${CODES.map(c=>`<th rowspan="2">${c}</th>`).join('')}<th colspan="12">Radni dani po mesecima</th></tr>
+ <tr>${RM.map(x=>`<th>${x}</th>`).join('')}</tr>
+ ${rows.map(o=>`<tr><td>${o.w.no||''}</td><td style="white-space:nowrap;text-align:left">${esc(o.w.name)}</td><td>${o.days}</td><td>${o.sum}</td><td>${o.we}</td>${CODES.map(c=>`<td>${o[c]}</td>`).join('')}${o.mon.map(x=>`<td>${x||''}</td>`).join('')}</tr>`).join('')}
+ ${rows.length?`<tr style="font-weight:700"><td></td><td style="text-align:left">Ukupno</td><td>${tot.days}</td><td>${tot.sum}</td><td>${tot.we}</td>${CODES.map(c=>`<td>${tot[c]}</td>`).join('')}${tot.mon.map(x=>`<td>${x}</td>`).join('')}</tr>`:''}</table></div>
+ ${!rows.length?'<p>Nema radnika.</p>':''}</div>`;
+}
+function expStat(){
+ const y=ui.sy||new Date().getFullYear(),{rows:ws,tot}=stData(y),n=ws.length;
+ const H1=['Br.','Ime','Prezime','Radnih dana','Sati ukupno','Rad vikendom',...CODES],nh=H1.length,nc=nh+12,last=n+3;
+ let rows=`<row r="1">${cs(0,1,'Statistika radnika za '+y+'. godinu',1)}</row>`;
+ rows+=`<row r="2" ht="30" customHeight="1">${H1.map((h,i)=>cs(i,2,h,3)).join('')}${cs(nh,2,'Radni dani po mesecima',3)}${RM.slice(1).map((_,i)=>cs(nh+1+i,2,'',3)).join('')}</row>`;
+ rows+=`<row r="3">${H1.map((h,i)=>cs(i,3,'',3)).join('')}${RM.map((x,i)=>cs(nh+i,3,x,3)).join('')}</row>`;
+ ws.forEach((o,j)=>{const r=j+4,[a,b]=splitName(o.w);
+  rows+=`<row r="${r}">${cs(0,r,o.w.no||j+1,5)}${cs(1,r,a,7)}${cs(2,r,b,7)}${cs(3,r,o.days,5)}${cs(4,r,o.sum,5)}${cs(5,r,o.we,5)}${CODES.map((c,i)=>cs(6+i,r,o[c],5)).join('')}${o.mon.map((x,i)=>cs(nh+i,r,x,5)).join('')}</row>`});
+ const tr=last+1,tv=[tot.days,tot.sum,tot.we,...CODES.map(c=>tot[c]),...tot.mon];
+ rows+=`<row r="${tr}">${cs(0,tr,'',3)}${cs(1,tr,'Ukupno',3)}${cs(2,tr,'',3)}${tv.map((v,i)=>cf(3+i,tr,n?`SUM(${colL(3+i)}4:${colL(3+i)}${last})`:'0',v,6)).join('')}</row>`;
+ const cols=`<col min="1" max="1" width="4.5" customWidth="1"/><col min="2" max="2" width="14" customWidth="1"/><col min="3" max="3" width="18" customWidth="1"/><col min="4" max="${nh}" width="9" customWidth="1"/><col min="${nh+1}" max="${nc}" width="4.5" customWidth="1"/>`;
+ const merges=[...H1.map((_,i)=>`${colL(i)}2:${colL(i)}3`),`${colL(nh)}2:${colL(nc-1)}2`];
+ dl(mkXlsx(sheetX(cols,rows,3,merges),'Statistika'),`statistika-${y}.xlsx`);
+}
+function zipX(files){
+ const enc=new TextEncoder(),out=[],cd=[];let off=0;
+ const T=[...Array(256)].map((_,n)=>{let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;return c>>>0});
+ const crc=b=>{let c=-1;for(const x of b)c=T[(c^x)&255]^(c>>>8);return(c^-1)>>>0};
+ for(const [name,txt] of files){
+  const nb=enc.encode(name),d=enc.encode(txt),c=crc(d);
+  const h=new DataView(new ArrayBuffer(30));h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x800,true);h.setUint32(14,c,true);h.setUint32(18,d.length,true);h.setUint32(22,d.length,true);h.setUint16(26,nb.length,true);
+  out.push(h.buffer,nb,d);
+  const e=new DataView(new ArrayBuffer(46));e.setUint32(0,0x02014b50,true);e.setUint16(4,20,true);e.setUint16(6,20,true);e.setUint16(8,0x800,true);e.setUint32(16,c,true);e.setUint32(20,d.length,true);e.setUint32(24,d.length,true);e.setUint16(28,nb.length,true);e.setUint32(42,off,true);
+  cd.push(e.buffer,nb);off+=30+nb.length+d.length;
+ }
+ const cl=cd.reduce((s,b)=>s+b.byteLength,0);
+ const z=new DataView(new ArrayBuffer(22));z.setUint32(0,0x06054b50,true);z.setUint16(8,files.length,true);z.setUint16(10,files.length,true);z.setUint32(12,cl,true);z.setUint32(16,off,true);
+ return new Blob([...out,...cd,z.buffer],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+/* ---- trajna baza u fajlu (Chrome / Edge) ---- */
+const HAS_FS=typeof window.showSaveFilePicker=='function';
+let fh=null,fsState='none',lastW='',wq=Promise.resolve(),_ri=null;
+const FT={types:[{description:'Baza (JSON)',accept:{'application/json':['.json']}}]};
+async function idbGet(k){try{const d=await idb();return await new Promise(ok=>{const q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>ok(q.result);q.onerror=()=>ok(null)})}catch(e){return null}}
+async function idbSet(k,v){try{const d=await idb();d.transaction('kv','readwrite').objectStore('kv').put(v,k)}catch(e){}}
+function writeFile(){
+ if(!fh||fsState!=='ok')return Promise.resolve();
+ const data=JSON.stringify(st);
+ wq=wq.then(async()=>{try{const w=await fh.createWritable();await w.write(data);await w.close();fsState='ok';lastW=new Date().toTimeString().slice(0,5)}catch(e){fsState='need'}bar()}).catch(()=>{});
+ return wq;
+}
+async function adopt(d){st=Object.assign({workers:[],chiefs:[],records:[],hours:{},abs:{},lastChief:'',lastShift:'1'},d);await save()}
+async function syncFile(){
+ try{
+  const t=await(await fh.getFile()).text();let d=null;try{d=JSON.parse(t)}catch(e){}
+  if(d&&d.workers&&(d.ts||0)>(st.ts||0))await adopt(d);else await writeFile();
+ }catch(e){fsState='need'}
+ bar();
+}
+async function initFile(){
+ try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+ if(!HAS_FS){bar();return}
+ fh=await idbGet('fh');
+ if(fh){try{fsState=(await fh.queryPermission({mode:'readwrite'}))==='granted'?'ok':'need'}catch(e){fh=null}}
+ if(fh&&fsState==='ok')await syncFile();
+ bar();
+}
+async function resume(){try{if(await fh.requestPermission({mode:'readwrite'})==='granted'){fsState='ok';await syncFile();migr();render()}}catch(e){alert('Dozvola nije data.')}}
+async function linkNew(){
+ try{const h=await showSaveFilePicker(Object.assign({suggestedName:'higijena-baza.json'},FT));fh=h;fsState='ok';await idbSet('fh',h);await save();render()}
+ catch(e){if(e&&e.name!=='AbortError')alert('Nije moguće napraviti fajl: '+e.message)}
+}
+async function linkOpen(){
+ try{
+  const [h]=await showOpenFilePicker(FT);
+  if(await h.requestPermission({mode:'readwrite'})!=='granted'){alert('Potrebna je dozvola za upis u fajl.');return}
+  const d=JSON.parse(await(await h.getFile()).text());if(!d.workers)throw 0;
+  if((st.workers.length||st.records.length)&&!confirm('Podaci iz fajla zamenjuju trenutne podatke u pregledaču. Nastaviti?'))return;
+  fh=h;fsState='ok';await idbSet('fh',h);await adopt(d);tab='ev';render();
+ }catch(e){if(e&&e.name!=='AbortError')alert('Neispravan fajl baze.')}
+}
+function bar(){
+ const b=document.getElementById('bar');if(!b)return;
+ let c,h;
+ if(!HAS_FS){c='err';h='Ovaj pregledač ne može da čuva bazu u fajl. Koristite Chrome ili Edge i redovno pravite rezervnu kopiju.'}
+ else if(!fh){c='warn';h='Baza je samo u pregledaču i briše se čišćenjem keša. <button class="g" onclick="tab=\'bk\';render()">Poveži fajl baze</button>'}
+ else if(fsState!=='ok'){c='warn';h='Veza sa fajlom baze „'+esc(fh.name)+'“ je prekinuta. <button class="g" onclick="resume()">Nastavi čuvanje u fajl</button>'}
+ else{c='ok';h='✓ Baza se automatski čuva u fajl „'+esc(fh.name)+'“'+(lastW?' (poslednje čuvanje '+lastW+')':'')}
+ b.className='noprint '+c;b.innerHTML=h;
+}
+function migr(){if(st.workers.some(w=>!w.no)){let n=Math.max(0,...st.workers.map(w=>w.no||0));st.workers.forEach(w=>{if(!w.no)w.no=++n});sortW();save()}}
+/* ---- uputstvo ---- */
+function up(){
+ $('#app').innerHTML=`<div class="card" style="line-height:1.55;max-width:900px">
+ <h2 style="margin-top:0">Uputstvo za korišćenje</h2>
+ <h3>1. Prvo podešavanje (radi se samo jednom)</h3>
+ <ol><li>Kartica <b>Šefovi</b>: upišite ime i prezime šefa i kliknite „Dodaj šefa“. Dodajte sve koji kontrolišu.</li>
+ <li>Kartica <b>Radnici</b>: upišite <b>redni broj</b> (automatski se predlaže sledeći), ime i prezime i period važenja sanitarnog pregleda (npr. 01.03.2026 - 01.03.2027), pa „Dodaj radnika“. Redni broj i period se kasnije mogu izmeniti u tabeli. Radnici su poređani po rednom broju, i taj redosled važi u Radnoj listi i u Excelu.</li>
+ <li>Radnik koji više ne radi: skinite štiklu u koloni „Aktivan“. Neće se prikazivati u dnevnoj evidenciji, a stari zapisi ostaju. „Obriši“ briše radnika i sve njegove zapise.</li></ol>
+ <h3>2. Dnevna evidencija</h3>
+ <ol><li>Izaberite <b>datum</b>, <b>smenu</b> i šefa (<b>Kontrolisao</b>).</li>
+ <li>Štiklirajte u prvoj koloni radnike koji su <b>došli na posao</b>. Gornja štikla označava sve odjednom.</li>
+ <li>Za svakog štikliranog radnika proverite odgovore Da/Ne. Unapred je postavljeno: radna odeća Da, uredan izgled Da, nakit Ne, lakirani nokti Ne, hrana Da, pušenje Da, alkohol Da. Menjajte samo gde postoji odstupanje i upišite <b>korektivnu meru</b>.</li>
+ <li>Radnike koji <b>nisu na poslu</b> ne štiklirajte u prvoj koloni, već u jednoj od kolona: <b>KS</b> (Kresna slava), <b>GO</b> (godišnji odmor), <b>BO</b> (bolovanje), <b>PO</b> (plaćeno odsustvo), <b>DP</b> (državni praznik). Za državni praznik možete kliknuti „DP svima“ da se označe svi radnici odjednom. Može samo jedna oznaka, i ne istovremeno sa štiklom „radi“.</li>
+ <li>Kliknite <b>„Sačuvaj evidenciju“</b>. Ponovnim otvaranjem istog datuma i smene možete ispraviti unos pa opet sačuvati.</li></ol>
+ <p>Oznake KS, GO, BO, PO, DP se vide samo u Radnoj listi. U obrascu za štampu se ne pojavljuju.</p>
+ <h3>3. Štampa / pregled</h3>
+ <ol><li>Izaberite filtere: radnik, period od-do, smena, šef. Bez filtera se prikazuju svi.</li>
+ <li>Za svakog radnika se prikazuje poseban list obrasca YUM-71.03.005.</li>
+ <li>Kliknite „Štampaj“. Štampa je podešena na A4 položeno.</li></ol>
+ <h3>4. Radna lista</h3>
+ <ol><li>Izaberite <b>mesec</b>. Prikazuju se svi dani u mesecu, a subote i nedelje su obojene.</li>
+ <li>Gde je radnik bio štikliran u dnevnoj evidenciji upisuje se <b>8</b>, a za odsutne <b>KS, GO, BO, PO ili DP</b>.</li>
+ <li>Bilo koje polje možete ručno promeniti (broj sati, ili KS/GO/BO/PO/DP, ili prazno). Kolona „Ukupno“ sabira sate.</li>
+ <li><b>„Izvezi u Excel“</b> preuzima .xlsx fajl. Podešen je za štampu na A4 položeno, tako da se cela tabela uklapa u širinu strane (Excel: Datoteka, Štampaj).</li></ol>
+ <h3>5. Statistika</h3>
+ <p>Kartica <b>Statistika</b> pokazuje za izabranu godinu za svakog radnika: broj radnih dana, ukupno sati, rad vikendom, broj dana KS, GO, BO, PO i DP, i radne dane po mesecima. „Izvezi statistiku u Excel“ pravi tabelu za štampu na A4 položeno.</p>
+ <h3>6. Trajna baza u fajlu (Chrome ili Edge)</h3>
+ <ol><li>Kartica <b>Rezerva (backup)</b>, dugme „Napravi novi fajl baze“. Izaberite folder i ime fajla (npr. higijena-baza.json). To radite samo jednom.</li>
+ <li>Od tada se svaka promena automatski upisuje u taj fajl. Na vrhu strane stoji zelena poruka „Baza se automatski čuva“.</li>
+ <li>Ako se pojavi žuta poruka, kliknite „Nastavi čuvanje u fajl“ (pregledač povremeno traži dozvolu nakon ponovnog pokretanja).</li>
+ <li>Posle čišćenja keša otvorite stranu, idite na Rezerva i kliknite „Otvori postojeći fajl baze“, pa izaberite isti fajl. Svi podaci se vraćaju. Fajl baze ne brišite i ne premeštajte.</li></ol>
+ <h3>7. Rezerva (backup)</h3>
+ <p>Podaci se čuvaju u pregledaču na ovom računaru. Povremeno (npr. jednom nedeljno) kliknite „Preuzmi rezervnu kopiju“ i sačuvajte fajl na USB ili drugi disk. Ako se podaci izgube ili prelazite na drugi računar, izaberite taj fajl u polju „Vrati iz rezervne kopije“.</p>
+ <h3>Važno</h3>
+ <ul><li>Uvek otvarajte isti fajl u istom pregledaču, inače nećete videti sačuvane podatke.</li>
+ <li>Ne čistite podatke pregledača (istoriju/kolačiće) bez prethodne rezervne kopije.</li></ul>
+ </div>`;
+}
+/* ---- backup ---- */
+function bk(){
+ $('#app').innerHTML=`<div class="card"><h3 style="margin-top:0">Trajna baza u fajlu (preporučeno)</h3>
+ <p>Podaci se pri svakoj promeni automatski upisuju u jedan fajl na vašem računaru (isti fajl se ažurira, ne pravi se kopija). Tako ih ne briše čišćenje keša pregledača.</p>
+ <p><b>Status:</b> ${!HAS_FS?'ovaj pregledač to ne podržava (koristite Chrome ili Edge)':!fh?'fajl nije povezan':fsState==='ok'?'povezan sa fajlom „'+esc(fh.name)+'“ i automatski se čuva':'veza je prekinuta, kliknite „Nastavi čuvanje u fajl“ na vrhu strane'}</p>
+ ${HAS_FS?`<div class="row"><button class="b" onclick="linkNew()">Napravi novi fajl baze</button><button class="b" onclick="linkOpen()">Otvori postojeći fajl baze</button></div>
+ <p style="color:var(--mu);font-size:13px">Prvi put: „Napravi novi fajl baze“, izaberite folder (npr. Dokumenta) i ime fajla koje još ne postoji. Posle čišćenja keša ili na drugom računaru: „Otvori postojeći fajl baze“ i izaberite taj isti fajl, i svi podaci se vraćaju.</p>`:''}</div>
+ <div class="card"><p>Baza je sačuvana u pregledaču na ovom računaru. Povremeno napravite rezervnu kopiju na USB ili drugi disk.</p>
+ <div class="row"><button class="b" onclick="exp()">Preuzmi rezervnu kopiju</button>
+ <div><label>Vrati iz rezervne kopije</label><input type="file" accept=".json" onchange="imp(this)"></div></div></div>`;
+}
+function exp(){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([JSON.stringify(st)],{type:'application/json'}));a.download='higijena-backup-'+today()+'.json';a.click()}
+function imp(i){const f=i.files[0];if(!f)return;const r=new FileReader();r.onload=async()=>{try{const d=JSON.parse(r.result);if(!d.workers)throw 0;if(!confirm('Ovo zamenjuje trenutne podatke. Nastaviti?'))return;st=Object.assign(st,d);await save();alert('Podaci vraćeni.');tab='ev';render()}catch(e){alert('Neispravan fajl.')}};r.readAsText(f)}
+load().then(async()=>{migr();render();await initFile();migr();render()});
+</script></body></html>
